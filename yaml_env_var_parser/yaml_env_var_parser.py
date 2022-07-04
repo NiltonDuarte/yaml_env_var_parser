@@ -16,8 +16,7 @@ RE_PATTERN = re.compile(
             r"(?P<braced>(.*?))(\|(?P<braced_default>.*?))?"  # noqa
         r"}"
         r"|(?P<named>[\w\-\.]+)(\|(?P<named_default>.*))?"
-    r"))"
-    r"(?P<post>[\"\'])?",
+    r"))",
     re.MULTILINE | re.UNICODE | re.IGNORECASE | re.VERBOSE,
 )
 
@@ -25,12 +24,29 @@ RE_PATTERN = re.compile(
 class EnvVarParserReader(Reader):
 
     def __init__(self, stream, strict, allow_parse_named):
+        self.strict = strict
+        self.allow_parse_named = allow_parse_named
+        self.cfg = os.environ
+        # if the stream is a string, we parse is before sending to the Reader
+        if isinstance(stream, str):
+            stream = self.__parse_yaml_buffer(buffer=stream,
+                                              cfg=self.cfg,
+                                              strict=self.strict,
+                                              allow_parse_named=self.allow_parse_named)
+        # else, we send it to the reader and we will parse it at raw_buffer setter
         super().__init__(stream)
-        self.buffer = self.__parse_yaml_buffer(
-            buffer=self.buffer,
-            cfg=os.environ,
-            strict=strict,
-            allow_parse_named=allow_parse_named
+
+    @property
+    def raw_buffer(self):
+        return self._raw_buffer
+
+    @raw_buffer.setter
+    def raw_buffer(self, value):
+        self._raw_buffer = self.__parse_yaml_buffer(
+            buffer=value,
+            cfg=self.cfg,
+            strict=self.strict,
+            allow_parse_named=self.allow_parse_named
         )
 
     @staticmethod
@@ -45,6 +61,9 @@ class EnvVarParserReader(Reader):
         :param bool strict: strict mode
         :return: dict
         """
+        # if the buffer is None or empty, just return it
+        if not buffer:
+            return buffer
 
         # not found variables
         not_found_variables = set()
@@ -113,6 +132,21 @@ class EnvVarParserReader(Reader):
             buffer = buffer.replace(replace, replaces[replace])
 
         return buffer
+
+    def update_raw(self):
+        # because i'm not handling the data loading process
+        # loading partial data might result in partial env vars
+        # that will not be parsed in the raw data buffer
+        # !! this is a performance issue !!
+        data = self.stream.read()
+        if self.raw_buffer is None:
+            self.raw_buffer = data
+        else:
+            self.raw_buffer += data
+        # because i'm modifying the raw buffer, i'm always setting the new len after the parsing is made
+        self.stream_pointer = len(self.raw_buffer)
+        if not data:
+            self.eof = True
 
 
 class EnvVarParserSafeLoader(
