@@ -6,7 +6,7 @@ from yaml.parser import Parser
 from yaml.composer import Composer
 from yaml.constructor import SafeConstructor
 from yaml.resolver import Resolver
-
+from yaml import safe_dump  # noqa
 
 # pattern to extract env variables
 RE_PATTERN = re.compile(
